@@ -31,7 +31,8 @@ async def database_error_handler(request: Request, error: PyMongoError):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://hrm-frontend-ruddy.vercel.app/"
+        "https://hrm-frontend-ruddy.vercel.app",
+        "https://hrm-frontend-m7xx1glcc-sanjay018.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
