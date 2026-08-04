@@ -32,7 +32,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://hrm-frontend-ruddy.vercel.app",
-        "https://hrm-frontend-m7xx1glcc-sanjay018.vercel.app"
+        "https://hrm-frontend-m7xx1glcc-sanjay018.vercel.app",
+        "https://hrm-frontend-c73pgefkf-sanjay018.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
