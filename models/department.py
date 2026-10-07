@@ -1,10 +1,16 @@
 from pydantic import BaseModel
 
+
 class DepartmentCreate(BaseModel):
-    name : str
+    name: str
+
+
+class DepartmentUpdate(BaseModel):
+    name: str
+
 
 class DepartmentResponse(DepartmentCreate):
-    id : str
-    name : str
+    id: str
+    name: str
     total_employees: int
-    is_deleted : bool = False
+    is_deleted: bool = False
