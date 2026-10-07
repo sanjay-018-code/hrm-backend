@@ -1,118 +1,244 @@
 from fastapi import HTTPException
 from bson import ObjectId
 
-from models.department import DepartmentCreate,DepartmentResponse
+from models.department import (
+    DepartmentCreate,
+    DepartmentUpdate,
+    DepartmentResponse
+)
 from models.employee import EmployeeResponse
 from app.database import department_collection, employees_collection
 
-def create_department_service(department:DepartmentCreate):
-    existing = department_collection.find_one({"name":department.name}) 
-    if existing : raise HTTPException(401,"Department Already Exists")
 
-    data = department.model_dump()
-    data["is_deleted"]  =False
+def create_department_service(department: DepartmentCreate):
 
-    data["total_employees"] = employees_collection.count_documents({
-        "department": department.name
+    name = department.name.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Department name is required"
+        )
+
+    existing = department_collection.find_one({
+        "name": name,
+        "is_deleted": False
     })
 
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail="Department Already Exists"
+        )
+
+    data = {
+        "name": name,
+        "is_deleted": False,
+        "total_employees": 0
+    }
+
     result = department_collection.insert_one(data)
+
     return DepartmentResponse(
-        id= str(result.inserted_id),
-        **data
+        id=str(result.inserted_id),
+        name=name,
+        total_employees=0,
+        is_deleted=False
     )
+
 
 def get_all_department_service():
 
-    departments = department_collection.find({"is_deleted":False})
-    if not departments : raise HTTPException(404, "NO Departments found")
+    departments = department_collection.find({
+        "is_deleted": False
+    })
 
     result = []
 
-    for department in departments:  
-        total_employees = employees_collection.count_documents({"department": department["name"],"is_deleted":False})
+    for department in departments:
+
+        total_employees = employees_collection.count_documents({
+            "department": department["name"],
+            "is_deleted": False
+        })
+
         result.append(
-        DepartmentResponse(
-            id=str(department["_id"]),
-            name= department["name"],
-            total_employees=total_employees
-        ))
+            DepartmentResponse(
+                id=str(department["_id"]),
+                name=department["name"],
+                total_employees=total_employees,
+                is_deleted=False
+            )
+        )
 
     return result
 
-def get_department_by_id_service(department_id):
-    result = department_collection.find_one({"_id":ObjectId(department_id),"is_deleted":False})
-    if not result: raise HTTPException(404,"Department Not Found")
-    total_employees = employees_collection.count_documents({"department": result["name"],"is_deleted":False})
+
+def get_department_by_id_service(department_id: str):
+
+    try:
+        object_id = ObjectId(department_id)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Department ID"
+        )
+
+    result = department_collection.find_one({
+        "_id": object_id,
+        "is_deleted": False
+    })
+
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="Department Not Found"
+        )
+
+    total_employees = employees_collection.count_documents({
+        "department": result["name"],
+        "is_deleted": False
+    })
 
     return DepartmentResponse(
         id=str(result["_id"]),
         name=result["name"],
-        total_employees=(total_employees)
+        total_employees=total_employees,
+        is_deleted=False
     )
 
-def update_department_by_id_service(department_id,name):
-    update = department_collection.update_one({
-        "_id": ObjectId(department_id),
-        "is_deleted":False
-    },{
-        "$set":{
-            "name":name
-        }
-    })
 
-    if update.matched_count == 0: raise HTTPException(404,"Department not Found")
+def update_department_by_id_service(
+    department_id: str,
+    department: DepartmentUpdate
+):
 
-    updated = department_collection.find_one({"_id":ObjectId(department_id)})
-    if not updated : raise HTTPException(404,"Department not Found")
+    new_name = department.name.strip()
 
-    total_employees = employees_collection.count_documents({"department":updated["name"]})
-
-    return DepartmentResponse(
-        id=str(updated["_id"]),
-        name=updated["name"],
-        total_employees=(total_employees)
-    )
-
-def delete_department_service(department_id):
-    deleted = department_collection.update_one({
-        "_id":ObjectId(department_id),
-        "is_deleted":False
-    },{
-        "$set":{
-            "is_deleted":True
-        }
-    })
-
-    if deleted.matched_count == 0: raise HTTPException(404,"Department Not Found")
-
-    return {
-        "message":"Deprtment Deleted"
-    }
-
-def get_employees_by_department_services(department_id):
-    existing = department_collection.find_one({"_id":ObjectId(department_id)})
-    if not existing: raise HTTPException(404,"Department Not Found")
-
-    employee = employees_collection.find({
-        "is_deleted":False,
-        "department":existing["name"]
-    })
-
-    employees = []
-
-    for e in employee:
-        employees.append(
-            EmployeeResponse(
-                id = str(e["_id"]),
-                name= e["name"],
-                department= e["department"],
-                designation= e["designation"],
-                joining_date= e["joining_date"],
-                salary= e["salary"],
-                phone= e["phone"],
-                email= e["email"],
-            )
+    if not new_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Department name is required"
         )
 
-    return employees
+    try:
+        object_id = ObjectId(department_id)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Department ID"
+        )
+
+    existing = department_collection.find_one({
+        "_id": object_id,
+        "is_deleted": False
+    })
+
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail="Department Not Found"
+        )
+
+    old_name = existing["name"]
+
+    # Prevent duplicate department names
+    duplicate = department_collection.find_one({
+        "name": new_name,
+        "is_deleted": False,
+        "_id": {"$ne": object_id}
+    })
+
+    if duplicate:
+        raise HTTPException(
+            status_code=409,
+            detail="Department Already Exists"
+        )
+
+    # Rename department
+    department_collection.update_one(
+        {
+            "_id": object_id,
+            "is_deleted": False
+        },
+        {
+            "$set": {
+                "name": new_name
+            }
+        }
+    )
+
+    # Update employees using the old department name
+    employees_collection.update_many(
+        {
+            "department": old_name,
+            "is_deleted": False
+        },
+        {
+            "$set": {
+                "department": new_name
+            }
+        }
+    )
+
+    total_employees = employees_collection.count_documents({
+        "department": new_name,
+        "is_deleted": False
+    })
+
+    return DepartmentResponse(
+        id=str(object_id),
+        name=new_name,
+        total_employees=total_employees,
+        is_deleted=False
+    )
+
+
+def delete_department_service(department_id: str):
+
+    try:
+        object_id = ObjectId(department_id)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Department ID"
+        )
+
+    department = department_collection.find_one({
+        "_id": object_id,
+        "is_deleted": False
+    })
+
+    if not department:
+        raise HTTPException(
+            status_code=404,
+            detail="Department Not Found"
+        )
+
+    employee_count = employees_collection.count_documents({
+        "department": department["name"],
+        "is_deleted": False
+    })
+
+    # Don't allow deleting a department that still contains employees
+    if employee_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete department. {employee_count} employee(s) are assigned to it."
+        )
+
+    department_collection.update_one(
+        {
+            "_id": object_id,
+            "is_deleted": False
+        },
+        {
+            "$set": {
+                "is_deleted": True
+            }
+        }
+    )
+
+    return {
+        "message": "Department Deleted Successfully"
+    }
